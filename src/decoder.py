@@ -266,3 +266,61 @@ class SpeculativeDecoder:
             token_ids=input_ids[0].tolist(),
             metrics=metrics,
         )
+
+    def baseline_decode(self, prompt: str, max_tokens: int = 100) -> DecodeResult:
+        inputs = self.target_tokenizer(prompt, return_tensors="pt", padding=True)
+        input_ids = inputs["input_ids"].to(self.device)
+        attention_mask = inputs["attention_mask"].to(self.device)
+        prompt_length = input_ids.shape[1]
+
+        start_time = time.time()
+        with torch.inference_mode():
+            output_ids = self.target_model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_tokens,
+                do_sample=False,
+                use_cache=True,
+                pad_token_id=self.target_tokenizer.pad_token_id,
+                eos_token_id=self.target_tokenizer.eos_token_id,
+            )
+        elapsed_time = time.time() - start_time
+        generated_tokens = output_ids.shape[1] - prompt_length
+        metrics = DecodeMetrics(
+            generated_tokens=generated_tokens,
+            elapsed_time=elapsed_time,
+            tokens_per_second=generated_tokens / max(elapsed_time, 1e-8),
+            acceptance_rate=0.0,
+            draft_tokens_proposed=0,
+            draft_tokens_accepted=0,
+        )
+        return DecodeResult(
+            text=self.target_tokenizer.decode(output_ids[0], skip_special_tokens=True),
+            token_ids=output_ids[0].tolist(),
+            metrics=metrics,
+        )
+
+    def benchmark(
+        self,
+        prompt: str,
+        max_tokens: int = 100,
+        num_speculative_tokens: int = 15,
+        num_runs: int = 3,
+        compare_baseline: bool = True,
+    ) -> BenchmarkSummary:
+        summary = BenchmarkSummary()
+
+        for _ in range(num_runs):
+            result = self.speculative_decode(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                num_speculative_tokens=num_speculative_tokens,
+            )
+            summary.speculative_runs.append(result.metrics)
+
+        if compare_baseline:
+            for _ in range(num_runs):
+                result = self.baseline_decode(prompt=prompt, max_tokens=max_tokens)
+                summary.baseline_runs.append(result.metrics)
+
+        return summary
