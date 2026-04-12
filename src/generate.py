@@ -11,17 +11,23 @@ def main() -> int:
         draft_model_name=DEFAULT_DRAFT_MODEL,
         device=DEVICE,
     )
+
+    result1 = decoder.baseline_decode(prompt=DEFAULT_PROMPTS, max_tokens=MAX_TOKENS)
     
-    result = decoder.speculative_decode(
+    result2 = decoder.speculative_decode(
             prompt=DEFAULT_PROMPTS,
             max_tokens=MAX_TOKENS,
             num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
     )
 
-    print("Generated text:\n")
-    print(result.text)
+    print("Generated text result1:\n")
+    print(result1.text)
     print("\nMetrics:\n")
-    print(json.dumps(result.metrics.to_dict(), indent=2))
+    print(json.dumps(result1.metrics.to_dict(), indent=2))
+    print("Generated text result2:\n")
+    print(result2.text)
+    print("\nMetrics:\n")
+    print(json.dumps(result2.metrics.to_dict(), indent=2))
     return 0
 
 
