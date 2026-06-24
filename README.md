@@ -17,11 +17,11 @@ speculative_decoding/
 
 ## Setup
 
-Activate the existing Conda environment and install the dependencies:
+Create a venv and install the dependencies:
 
 ```bash
-conda activate cse291
-cd speculative_decoding
+conda create --name sp_dcode python=3.11
+conda activate sp_dcode
 pip install -r requirements.txt
 ```
 
