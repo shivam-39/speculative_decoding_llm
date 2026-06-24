@@ -2,21 +2,23 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from statistics import mean
 from typing import Any, Dict, List, Optional
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-DEFAULT_TARGET_MODEL = "EleutherAI/pythia-1.4b-deduped"
 DEFAULT_DRAFT_MODEL = "EleutherAI/pythia-160m-deduped"
+DEFAULT_TARGET_MODEL = "EleutherAI/pythia-1.4b-deduped"
 ALTERNATIVE_TARGET_MODEL = "EleutherAI/pythia-410m-deduped"
+MODEL_CACHE_DIR = Path(__file__).resolve().parents[1] / "model_cache"
 DEFAULT_PROMPTS = [
     "The future of Artificial Intelligence is",
     "Write a short story about a robot learning to feel emotions:",
     "Write the lyrics to the song 'Happy Birthday'.",
 ]
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 MAX_TOKENS = 100
 NUM_SPECULATIVE_TOKENS = 15
 
@@ -50,16 +52,18 @@ class DecodeResult:
 
 class SpeculativeDecoder:
     def __init__(self, target_model_name: str, draft_model_name: str, device: Optional[str] = None):
-        self.device = resolve_device(device)
+        self.device = device
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         self._last_target_predictions: Optional[torch.Tensor] = None
 
         if self.device == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
+        elif self.device == "mps":
+            torch.backends.mps.is_available = True
 
-        self.target_model, self.target_tokenizer = self.initialize_target_model(target_model_name)
         self.draft_model, self.draft_tokenizer = self.initialize_draft_model(draft_model_name)
+        self.target_model, self.target_tokenizer = self.initialize_target_model(target_model_name)
 
         if self.target_tokenizer.get_vocab() != self.draft_tokenizer.get_vocab():
             raise ValueError("Target and draft tokenizers must use the same vocabulary.")
@@ -87,7 +91,11 @@ class SpeculativeDecoder:
         last_error = None
         for load_kwargs in load_attempts:
             try:
-                model = AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    cache_dir=MODEL_CACHE_DIR,
+                    **load_kwargs,
+                )
                 break
             except (ImportError, TypeError, ValueError) as exc:
                 last_error = exc
@@ -105,12 +113,12 @@ class SpeculativeDecoder:
         return model
 
     def initialize_target_model(self, model_name: str):
-        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name))
+        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name, cache_dir=MODEL_CACHE_DIR))
         model = self._load_model(model_name, tokenizer, use_lower_precision=(self.device == "cuda"))
         return model, tokenizer
 
     def initialize_draft_model(self, model_name: str):
-        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name))
+        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name, cache_dir=MODEL_CACHE_DIR))
         model = self._load_model(model_name, tokenizer, use_lower_precision=(self.device == "cuda"))
         return model, tokenizer
 
