@@ -15,7 +15,7 @@ def main() -> int:
     for prompt in DEFAULT_PROMPTS:
         print(f"Prompt: {prompt}\n")
         
-        # result1 = decoder.baseline_decode(prompt=DEFAULT_PROMPTS, max_tokens=MAX_TOKENS)
+        result1 = decoder.baseline_decode(prompt=prompt, max_tokens=MAX_TOKENS)
     
         result2 = decoder.speculative_decode(
                 prompt=prompt,
@@ -23,13 +23,13 @@ def main() -> int:
                 num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
         )
 
-        # print("Generated text result1 - Baseline Decode\n")
-        # print(result1.text)
-        # print("\nMetrics:\n")
-        # print(json.dumps(result1.metrics.to_dict(), indent=2))
-        print("Generated text result2 - Speculative Decode\n")
+        print("Generated text result1 - Baseline Decode:\n")
+        print(result1.text)
+        print("\nMetrics - Baseline Decode:\n")
+        print(json.dumps(result1.metrics.to_dict(), indent=2))
+        print("Generated text result2 - Speculative Decode:\n")
         print(result2.text)
-        print("\nMetrics:\n")
+        print("\nMetrics - Speculative Decode:\n")
         print(json.dumps(result2.metrics.to_dict(), indent=2))
 
     return 0
