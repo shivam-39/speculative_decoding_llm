@@ -8,7 +8,12 @@ from datetime import datetime
 import torch
 from omegaconf import OmegaConf
 
-from decoder import SpeculativeDecoder
+try:
+    from .benchmark_prompts import COMPACT_BENCHMARK_PROMPTS, load_prompts, load_public_benchmark
+    from .decoder import SpeculativeDecoder
+except ImportError:  # pragma: no cover - allow execution as a script from src/
+    from benchmark_prompts import COMPACT_BENCHMARK_PROMPTS, load_prompts, load_public_benchmark
+    from decoder import SpeculativeDecoder
 
 CONFIG = OmegaConf.load(Path(__file__).with_name("config.yaml"))
 DEVICE = CONFIG.device
@@ -18,20 +23,60 @@ if DEVICE == "auto":
 PROMPTS_FILE = Path(__file__).with_name(CONFIG.prompts_file)
 
 
-def load_prompts() -> list[str]:
-    if not PROMPTS_FILE.exists():
-        raise FileNotFoundError(f"Prompt file not found: {PROMPTS_FILE}")
+def summarize_metrics(
+    results: list[dict],
+    draft_model_name: str | None = None,
+    target_model_name: str | None = None,
+) -> dict:
+    by_prompt: dict[str, dict[str, float]] = {}
+    for entry in results:
+        prompt = entry["prompt"]
+        decode = entry["decode"]
+        elapsed = entry["metrics"].get("elapsed_time", 0.0)
 
-    prompts = []
-    with open(PROMPTS_FILE, "r", encoding="utf-8") as prompts_file:
-        for line in prompts_file:
-            prompt = line.strip()
-            if prompt:
-                prompts.append(prompt)
-    return prompts
+        if prompt not in by_prompt:
+            by_prompt[prompt] = {}
+        by_prompt[prompt][decode] = elapsed
+
+    speedups: list[float] = []
+    for prompt, pair in by_prompt.items():
+        baseline_time = pair.get("baseline")
+        speculative_time = pair.get("speculative")
+        if baseline_time is None or speculative_time is None:
+            continue
+        if speculative_time <= 0:
+            continue
+        speedups.append(baseline_time / speculative_time)
+
+    return {
+        "num_prompts": len(by_prompt),
+        "avg_speedup": sum(speedups) / len(speedups) if speedups else 0.0,
+        "speedups": speedups,
+        "draft_model_name": draft_model_name,
+        "target_model_name": target_model_name,
+    }
+
+
+def get_prompts(args: argparse.Namespace) -> list[str]:
+    if args.benchmark:
+        return load_public_benchmark(args.benchmark, max_prompts=args.max_prompts)
+    if args.prompt_file:
+        return load_prompts(args.prompt_file, max_prompts=args.max_prompts)
+    if args.use_compact_benchmark:
+        return load_prompts(max_prompts=args.max_prompts)
+    if PROMPTS_FILE.exists():
+        return load_prompts(PROMPTS_FILE, max_prompts=args.max_prompts)
+    return list(COMPACT_BENCHMARK_PROMPTS[: args.max_prompts])
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Benchmark speculative decoding on a set of prompts.")
+    parser.add_argument("--benchmark", choices=["gsm8k", "humaneval", "mt-bench"], help="Load a public benchmark dataset.")
+    parser.add_argument("--prompt-file", type=str, help="Path to a file with one prompt per line.")
+    parser.add_argument("--use-compact-benchmark", action="store_true", help="Use the built-in compact public-style benchmark set.")
+    parser.add_argument("--max-prompts", type=int, default=None, help="Limit the number of prompts processed.")
+    args = parser.parse_args()
+
     decoder = SpeculativeDecoder(
         target_model_name=CONFIG.target_model_name,
         draft_model_name=CONFIG.draft_model_name,
@@ -48,10 +93,10 @@ def main() -> int:
     metrics_file = results_dir / f"metrics_{timestamp}.json"
 
     metrics_list: list[dict] = []
-    prompts = load_prompts()
+    prompts = get_prompts(args)
 
     for prompt in prompts:
-        print(f"Prompt: {prompt}\n")
+        # print(f"Prompt: {prompt}\n")
 
         result1 = decoder.baseline_decode(prompt=prompt, max_tokens=CONFIG.max_tokens)
 
@@ -90,10 +135,16 @@ def main() -> int:
         metrics_list.append({"prompt": prompt, "decode": "baseline", "metrics": result1.metrics.to_dict()})
         metrics_list.append({"prompt": prompt, "decode": "speculative", "metrics": result2.metrics.to_dict()})
 
+    summary = summarize_metrics(
+        metrics_list,
+        draft_model_name=CONFIG.draft_model_name,
+        target_model_name=CONFIG.target_model_name,
+    )
+
     # write metrics JSON for the run
     try:
         with open(metrics_file, "w", encoding="utf-8") as mf:
-            json.dump(metrics_list, mf, indent=2)
+            json.dump({"summary": summary, "results": metrics_list}, mf, indent=2)
     except Exception as exc:  # pragma: no cover - best-effort logging
         print(f"Warning: failed to write metrics file {metrics_file}: {exc}")
 
