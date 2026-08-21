@@ -15,11 +15,20 @@ DEVICE = CONFIG.device
 if DEVICE == "auto":
     DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
-PROMPTS = [
-    "The future of Artificial Intelligence is",
-    "Write a short story about a robot learning to feel emotions:",
-    "Write the lyrics to the song 'Happy Birthday'.",
-]
+PROMPTS_FILE = Path(__file__).with_name(CONFIG.prompts_file)
+
+
+def load_prompts() -> list[str]:
+    if not PROMPTS_FILE.exists():
+        raise FileNotFoundError(f"Prompt file not found: {PROMPTS_FILE}")
+
+    prompts = []
+    with open(PROMPTS_FILE, "r", encoding="utf-8") as prompts_file:
+        for line in prompts_file:
+            prompt = line.strip()
+            if prompt:
+                prompts.append(prompt)
+    return prompts
 
 
 def main() -> int:
@@ -39,8 +48,9 @@ def main() -> int:
     metrics_file = results_dir / f"metrics_{timestamp}.json"
 
     metrics_list: list[dict] = []
+    prompts = load_prompts()
 
-    for prompt in PROMPTS:
+    for prompt in prompts:
         print(f"Prompt: {prompt}\n")
 
         result1 = decoder.baseline_decode(prompt=prompt, max_tokens=CONFIG.max_tokens)

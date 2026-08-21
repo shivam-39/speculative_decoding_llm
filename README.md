@@ -4,16 +4,19 @@
 This project focuses on optimizing speculative decoding for faster language model inference. 
 The method uses a smaller, faster draft model to generate candidate tokens, which are then verified by a larger target model in a single forward pass.
 
-## Project Layout
+## Repo layout
 
 ```text
-speculative_decoding/
+.
 ├── README.md
 ├── pyproject.toml
-└── src/
-    ├── config.yaml
-    ├── decoder.py
-    └── generate.py
+├── src/
+│   ├── config.yaml
+│   ├── decoder.py
+│   ├── generate.py
+│   └── prompts.txt
+├── results/
+└── model_cache/
 ```
 
 ## Setup
@@ -26,10 +29,11 @@ source .venv/bin/activate
 uv sync
 ```
 
-## Run 
-
-Speculative decoding:
+## Run
 
 ```bash
-uv run python src/generate.py
+python src/generate.py
 ```
+
+This reads model settings from [src/config.yaml](src/config.yaml) and prompt entries from [src/prompts.txt](src/prompts.txt). The config includes the prompt filename via `prompts_file`, and the generator loads that file automatically.
+
