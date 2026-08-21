@@ -1,0 +1,3 @@
+Explain recursion in one sentence
+Write a haiku about a lighthouse
+What is the difference between a list and a tuple in Python?
