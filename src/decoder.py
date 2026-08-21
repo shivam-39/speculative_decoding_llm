@@ -10,7 +10,8 @@ import torch
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-CONFIG = OmegaConf.load(Path(__file__).with_name("config.yaml"))
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
+CONFIG = OmegaConf.load(CONFIG_PATH)
 MODEL_CACHE_DIR = (Path(__file__).resolve().parents[1] / CONFIG.model_cache_dir).resolve()
 
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from src.benchmark_prompts import COMPACT_BENCHMARK_PROMPTS, load_prompts
-from src.generate import summarize_metrics
+from src.utils import summarize_metrics
 
 
 def test_compact_benchmark_has_variable_prompt_lengths():
