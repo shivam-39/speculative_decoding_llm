@@ -2,25 +2,41 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
-from decoder import DEFAULT_PROMPTS, DEFAULT_DRAFT_MODEL, DEVICE, DEFAULT_TARGET_MODEL, MAX_TOKENS, NUM_SPECULATIVE_TOKENS, SpeculativeDecoder
+import torch
+from omegaconf import OmegaConf
+
+from decoder import SpeculativeDecoder
+
+CONFIG = OmegaConf.load(Path(__file__).with_name("config.yaml"))
+DEVICE = CONFIG.device
+if DEVICE == "auto":
+    DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+PROMPTS = [
+    "The future of Artificial Intelligence is",
+    "Write a short story about a robot learning to feel emotions:",
+    "Write the lyrics to the song 'Happy Birthday'.",
+]
+
 
 def main() -> int:
     decoder = SpeculativeDecoder(
-        target_model_name=DEFAULT_TARGET_MODEL,
-        draft_model_name=DEFAULT_DRAFT_MODEL,
+        target_model_name=CONFIG.target_model_name,
+        draft_model_name=CONFIG.draft_model_name,
         device=DEVICE,
     )
 
-    for prompt in DEFAULT_PROMPTS:
+    for prompt in PROMPTS:
         print(f"Prompt: {prompt}\n")
         
-        result1 = decoder.baseline_decode(prompt=prompt, max_tokens=MAX_TOKENS)
+        result1 = decoder.baseline_decode(prompt=prompt, max_tokens=CONFIG.max_tokens)
     
         result2 = decoder.speculative_decode(
                 prompt=prompt,
-                max_tokens=MAX_TOKENS,
-                num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
+                max_tokens=CONFIG.max_tokens,
+                num_speculative_tokens=CONFIG.num_speculative_tokens,
         )
 
         print("Generated text result1 - Baseline Decode:\n")

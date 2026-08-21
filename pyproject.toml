@@ -1,0 +1,16 @@
+[project]
+name = "speculative-decoding-llm"
+version = "0.1.0"
+description = "Speculative decoding for causal language models"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=0.27.0",
+    "omegaconf>=2.3.0",
+    "sentencepiece>=0.1.99",
+    "torch>=2.1.0",
+    "transformers>=4.40.0",
+]
+
+[tool.uv]
+package = false

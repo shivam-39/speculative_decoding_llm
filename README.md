@@ -9,20 +9,21 @@ The method uses a smaller, faster draft model to generate candidate tokens, whic
 ```text
 speculative_decoding/
 ├── README.md
-├── requirements.txt
+├── pyproject.toml
 └── src/
+    ├── config.yaml
     ├── decoder.py
     └── generate.py
 ```
 
 ## Setup
 
-Create a venv and install the dependencies:
+Create a virtual environment and install the dependencies with `uv`:
 
 ```bash
-conda create --name sp_dcode python=3.11
-conda activate sp_dcode
-pip install -r requirements.txt
+uv venv --python 3.11
+source .venv/bin/activate
+uv sync
 ```
 
 ## Run 
@@ -30,5 +31,5 @@ pip install -r requirements.txt
 Speculative decoding:
 
 ```bash
-python src/generate.py
+uv run python src/generate.py
 ```

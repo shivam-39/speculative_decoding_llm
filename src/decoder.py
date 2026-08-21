@@ -7,20 +7,11 @@ from statistics import mean
 from typing import Any, Dict, List, Optional
 
 import torch
+from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-DEFAULT_DRAFT_MODEL = "EleutherAI/pythia-160m-deduped"
-DEFAULT_TARGET_MODEL = "EleutherAI/pythia-1.4b-deduped"
-ALTERNATIVE_TARGET_MODEL = "EleutherAI/pythia-410m-deduped"
-MODEL_CACHE_DIR = Path(__file__).resolve().parents[1] / "model_cache"
-DEFAULT_PROMPTS = [
-    "The future of Artificial Intelligence is",
-    "Write a short story about a robot learning to feel emotions:",
-    "Write the lyrics to the song 'Happy Birthday'.",
-]
-DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-MAX_TOKENS = 100
-NUM_SPECULATIVE_TOKENS = 15
+CONFIG = OmegaConf.load(Path(__file__).with_name("config.yaml"))
+MODEL_CACHE_DIR = (Path(__file__).resolve().parents[1] / CONFIG.model_cache_dir).resolve()
 
 
 @dataclass
