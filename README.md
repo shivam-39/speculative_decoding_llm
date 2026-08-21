@@ -7,8 +7,8 @@ The method uses a smaller, faster draft model to generate candidate tokens, whic
 ## Repo layout
 
 ```text
-.
-├── README.md
+
+|── README.md
 ├── main.py
 ├── pyproject.toml
 ├── configs/
@@ -42,7 +42,15 @@ Use the main entrypoint from the project root:
 python main.py
 ```
 
-This reads model settings from [configs/config.yaml](configs/config.yaml) and default prompt entries from [src/prompts.txt](src/prompts.txt). The config includes the prompt filename via `prompts_file`, and the generator loads that file automatically.
+Or pass custom config and prompt files using:
+
+```bash
+python main.py ----config /path/to/config.yaml --prompt-file /path/to/prompts.txt
+```
+
+Each prompt should be on its own line, and the generator will benchmark baseline decoding and speculative decoding for each entry.
+
+# Benachmarks
 
 ## Run compact mixed-length benchmark
 
@@ -63,14 +71,6 @@ python main.py --benchmark gsm8k --max-prompts 20
 python main.py --benchmark humaneval --max-prompts 20
 python main.py --benchmark mt-bench --max-prompts 20
 ```
-
-## Run from a custom prompt file
-
-```bash
-python main.py --prompt-file /path/to/prompts.txt --max-prompts 50
-```
-
-Each prompt should be on its own line, and the generator will benchmark baseline decoding and speculative decoding for each entry.
 
 ## Output
 

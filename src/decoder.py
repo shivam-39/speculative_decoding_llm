@@ -7,12 +7,9 @@ from statistics import mean
 from typing import Any, Dict, List, Optional
 
 import torch
-from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
-CONFIG = OmegaConf.load(CONFIG_PATH)
-MODEL_CACHE_DIR = (Path(__file__).resolve().parents[1] / CONFIG.model_cache_dir).resolve()
+DEFAULT_MODEL_CACHE_DIR = (Path(__file__).resolve().parents[1] / "model_cache").resolve()
 
 
 @dataclass
@@ -43,7 +40,13 @@ class DecodeResult:
 
 
 class SpeculativeDecoder:
-    def __init__(self, target_model_name: str, draft_model_name: str, device: Optional[str] = None):
+    def __init__(
+        self,
+        target_model_name: str,
+        draft_model_name: str,
+        device: Optional[str] = None,
+        model_cache_dir: Optional[Path] = None,
+    ):
         self.device = device
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         self._last_target_predictions: Optional[torch.Tensor] = None
@@ -53,6 +56,8 @@ class SpeculativeDecoder:
             torch.backends.cudnn.allow_tf32 = True
         elif self.device == "mps":
             torch.backends.mps.is_available = True
+
+        self.model_cache_dir = Path(model_cache_dir).resolve() if model_cache_dir is not None else DEFAULT_MODEL_CACHE_DIR
 
         self.draft_model, self.draft_tokenizer = self.initialize_draft_model(draft_model_name)
         self.target_model, self.target_tokenizer = self.initialize_target_model(target_model_name)
@@ -85,7 +90,7 @@ class SpeculativeDecoder:
             try:
                 model = AutoModelForCausalLM.from_pretrained(
                     model_name,
-                    cache_dir=MODEL_CACHE_DIR,
+                    cache_dir=self.model_cache_dir,
                     **load_kwargs,
                 )
                 break
@@ -105,12 +110,12 @@ class SpeculativeDecoder:
         return model
 
     def initialize_target_model(self, model_name: str):
-        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name, cache_dir=MODEL_CACHE_DIR))
+        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name, cache_dir=self.model_cache_dir))
         model = self._load_model(model_name, tokenizer, use_lower_precision=(self.device == "cuda"))
         return model, tokenizer
 
     def initialize_draft_model(self, model_name: str):
-        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name, cache_dir=MODEL_CACHE_DIR))
+        tokenizer = self._configure_tokenizer(AutoTokenizer.from_pretrained(model_name, cache_dir=self.model_cache_dir))
         model = self._load_model(model_name, tokenizer, use_lower_precision=(self.device == "cuda"))
         return model, tokenizer
 

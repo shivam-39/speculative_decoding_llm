@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+import os
 
 import torch
 from omegaconf import OmegaConf
@@ -11,15 +12,16 @@ from omegaconf import OmegaConf
 from .decoder import SpeculativeDecoder
 from .utils import get_prompts, summarize_metrics
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
-CONFIG = OmegaConf.load(CONFIG_PATH)
-DEVICE = CONFIG.device
-if DEVICE == "auto":
-    DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
 
 def parse_args() -> argparse.Namespace:
+    default_config = Path(__file__).resolve().parents[1] / "configs" / "config.yaml"
     parser = argparse.ArgumentParser(description="Benchmark speculative decoding on a set of prompts.")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=str(default_config),
+        help="Path to the YAML config file (overrides default).",
+    )
     parser.add_argument("--benchmark", choices=["gsm8k", "humaneval", "mt-bench"], help="Load a public benchmark dataset.")
     parser.add_argument("--prompt-file", type=str, help="Path to a file with one prompt per line.")
     parser.add_argument("--use-compact-benchmark", action="store_true", help="Use the built-in compact public-style benchmark set.")
@@ -30,10 +32,23 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
+    # Resolve config path from parsed args (parser default already points to the workspace default)
+    config_path = Path(args.config)
+
+    CONFIG = OmegaConf.load(config_path)
+    DEVICE = CONFIG.device
+    if DEVICE == "auto":
+        DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+    # Compute model cache dir from config and construct decoder with explicit config values
+    model_cache_dir = (Path(__file__).resolve().parents[1] / CONFIG.model_cache_dir).resolve()
+
+
     decoder = SpeculativeDecoder(
         target_model_name=CONFIG.target_model_name,
         draft_model_name=CONFIG.draft_model_name,
         device=DEVICE,
+        model_cache_dir=model_cache_dir,
     )
 
     results_dir = Path(__file__).resolve().parents[1] / "results"
