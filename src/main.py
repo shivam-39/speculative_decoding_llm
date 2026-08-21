@@ -60,6 +60,15 @@ def main() -> int:
 
     metrics_list: list[dict] = []
     prompts = get_prompts(args)
+    # Determine prompt source type for metrics summary
+    if getattr(args, "benchmark", None):
+        prompt_source = f"benchmark:{args.benchmark}"
+    elif getattr(args, "prompt_file", None):
+        prompt_source = f"prompt_file:{args.prompt_file}"
+    elif getattr(args, "use_compact_benchmark", False):
+        prompt_source = "use-compact-benchmark"
+    else:
+        prompt_source = "built-in-compact-benchmark"
 
     for prompt in prompts:
         result1 = decoder.baseline_decode(prompt=prompt, max_tokens=CONFIG.max_tokens)
@@ -91,6 +100,7 @@ def main() -> int:
         metrics_list,
         draft_model_name=CONFIG.draft_model_name,
         target_model_name=CONFIG.target_model_name,
+        prompt_source=prompt_source,
     )
 
     try:

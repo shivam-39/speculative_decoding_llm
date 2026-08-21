@@ -1,7 +1,8 @@
+import argparse
 from pathlib import Path
 
 from src.benchmark_prompts import COMPACT_BENCHMARK_PROMPTS, load_prompts
-from src.utils import summarize_metrics
+from src.utils import get_prompts, summarize_metrics
 
 
 def test_compact_benchmark_has_variable_prompt_lengths():
@@ -35,3 +36,16 @@ def test_summarize_metrics_computes_avg_speedup():
     assert summary["avg_speedup"] == 2.0
     assert summary["draft_model_name"] == "draft"
     assert summary["target_model_name"] == "target"
+
+
+def test_get_prompts_falls_back_to_compact_benchmark_when_public_dataset_is_unavailable(monkeypatch):
+    args = argparse.Namespace(benchmark="gsm8k", prompt_file=None, use_compact_benchmark=False, max_prompts=2)
+
+    def raise_connection_error(*_args, **_kwargs):
+        raise ConnectionError("offline")
+
+    monkeypatch.setattr("src.utils.load_public_benchmark", raise_connection_error)
+
+    prompts = get_prompts(args)
+
+    assert prompts == COMPACT_BENCHMARK_PROMPTS[:2]

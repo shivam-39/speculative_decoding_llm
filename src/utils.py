@@ -10,6 +10,7 @@ def summarize_metrics(
     results: list[dict],
     draft_model_name: str | None = None,
     target_model_name: str | None = None,
+    prompt_source: str | None = None,
 ) -> dict:
     by_prompt: dict[str, dict[str, float]] = {}
     for entry in results:
@@ -37,12 +38,20 @@ def summarize_metrics(
         "speedups": speedups,
         "draft_model_name": draft_model_name,
         "target_model_name": target_model_name,
+        "prompt_source": prompt_source,
     }
 
 
 def get_prompts(args: argparse.Namespace) -> list[str]:
     if args.benchmark:
-        return load_public_benchmark(args.benchmark, max_prompts=args.max_prompts)
+        try:
+            return load_public_benchmark(args.benchmark, max_prompts=args.max_prompts)
+        except (ConnectionError, OSError, RuntimeError, ValueError):
+            # Public benchmark downloads are optional; if the Hub is unreachable or the
+            # dataset cannot be loaded, fall back to the built-in benchmark prompts.
+            if args.max_prompts is not None:
+                return list(COMPACT_BENCHMARK_PROMPTS[: args.max_prompts])
+            return list(COMPACT_BENCHMARK_PROMPTS)
     if args.prompt_file:
         return load_prompts(args.prompt_file, max_prompts=args.max_prompts)
     if args.use_compact_benchmark:

@@ -2,7 +2,8 @@
 ** (Work-In-Progress -> Adding more features)
 
 This project focuses on optimizing speculative decoding for faster language model inference. 
-The method uses a smaller, faster draft model to generate candidate tokens, which are then verified by a larger target model in a single forward pass.
+The method uses a smaller, faster draft model to generate candidate tokens, which are then verified by a larger target model in a single forward pass.  
+Summary of a current benchmark can be found in [docs/BENCHMARK.md](docs/BENCHMARK.md) 
 
 ## Repo layout
 
@@ -36,13 +37,11 @@ uv sync
 
 ## Run from the repo root
 
-Use the main entrypoint from the project root:
-
 ```bash
 python main.py
 ```
 
-Or pass custom config and prompt files using:
+Or pass optional custom config and prompt files using:
 
 ```bash
 python main.py ----config /path/to/config.yaml --prompt-file /path/to/prompts.txt
@@ -64,7 +63,11 @@ This loads the prompts from [src/benchmark_prompts.py](src/benchmark_prompts.py)
 
 ## Run a public benchmark dataset
 
-You can also benchmark against a public dataset directly. Supported choices are `gsm8k`, `humaneval`, and `mt-bench`.
+You can also benchmark against a public dataset directly. Supported choices are:
+
+- `gsm8k`: a dataset of grade-school math word problems used to evaluate numerical reasoning.
+- `humaneval`: a collection of programming tasks with reference unit tests for evaluating code generation.
+- `mt-bench`: a multi-task instruction-following benchmark used to compare model performance on diverse prompts.
 
 ```bash
 python main.py --benchmark gsm8k --max-prompts 20
