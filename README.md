@@ -75,6 +75,8 @@ python main.py --benchmark humaneval --max-prompts 20
 python main.py --benchmark mt-bench --max-prompts 20
 ```
 
+Default benchmark scripts can be found under `scripts/`
+
 ## Output
 
 The script writes:
