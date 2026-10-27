@@ -70,12 +70,22 @@ def main() -> int:
     else:
         prompt_source = "built-in-compact-benchmark"
 
-    for prompt in prompts:
+    total = len(prompts)
+    print(f"{prompt_source}: 0/{total} (0%)", flush=True)
+    
+    for index, prompt in enumerate(prompts, start=1):
         result1 = decoder.baseline_decode(prompt=prompt, max_tokens=CONFIG.max_tokens)
         result2 = decoder.speculative_decode(
             prompt=prompt,
             max_tokens=CONFIG.max_tokens,
             num_speculative_tokens=CONFIG.num_speculative_tokens,
+        )
+        percent = 100 * index / total
+        print(
+            f"{prompt_source}: {index}/{total} ({percent:.1f}%) "
+            f"baseline {result1.metrics.tokens_per_second:.1f} tok/s, "
+            f"speculative {result2.metrics.tokens_per_second:.1f} tok/s",
+            flush=True,
         )
 
         try:
