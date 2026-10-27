@@ -29,9 +29,9 @@ COMPACT_BENCHMARK_PROMPTS: list[str] = [
 ]
 
 PUBLIC_BENCHMARKS: dict[str, dict[str, str]] = {
-    "gsm8k": {"name": "gsm8k", "split": "test", "field": "question"},
-    "humaneval": {"name": "openai_humaneval", "split": "test", "field": "prompt"},
-    "mt-bench": {"name": "lmsys/mt_bench_human_judgments", "split": "train", "field": "prompt"},
+    "gsm8k": {"name": "openai/gsm8k", "config": "main", "split": "test", "field": "question"},
+    "humaneval": {"name": "openai/openai_humaneval", "split": "test", "field": "prompt"},
+    "mt-bench": {"name": "HuggingFaceH4/mt_bench_prompts", "split": "train", "field": "prompt"},
 }
 
 
@@ -76,8 +76,18 @@ def load_public_benchmark(benchmark_name: str, max_prompts: int | None = None) -
         raise RuntimeError("The 'datasets' package is required to load public benchmark prompts. Install it with: uv add datasets")
 
     dataset_config = PUBLIC_BENCHMARKS[normalized_name]
-    dataset = load_dataset(dataset_config["name"], split=dataset_config["split"])
-    prompts = [_normalize_prompt(example.get(dataset_config["field"])) for example in dataset]
+    config_name = dataset_config.get("config")
+    if config_name:
+        dataset = load_dataset(dataset_config["name"], config_name, split=dataset_config["split"])
+    else:
+        dataset = load_dataset(dataset_config["name"], split=dataset_config["split"])
+    prompts: list[str] = []
+    for example in dataset:
+        value = example.get(dataset_config["field"])
+        if isinstance(value, list):
+            prompts.extend(_normalize_prompt(item) for item in value)
+        else:
+            prompts.append(_normalize_prompt(value))
     if max_prompts is not None:
         prompts = prompts[:max_prompts]
     return prompts

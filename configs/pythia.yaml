@@ -3,5 +3,5 @@ target_model_name: EleutherAI/pythia-1.4b-deduped
 alternative_target_model_name: EleutherAI/pythia-410m-deduped
 model_cache_dir: model_cache
 device: auto
-max_tokens: 50
-num_speculative_tokens: 10
+max_tokens: 500
+num_speculative_tokens: 8
