@@ -1,5 +1,5 @@
 draft_model_name: Qwen/Qwen2.5-0.5B-Instruct
-target_model_name: Qwen/Qwen2.5-7B-Instruct
+target_model_name: Qwen/Qwen2.5-32B-Instruct
 model_cache_dir: model_cache
 device: auto
 max_tokens: 500

@@ -49,7 +49,6 @@ class SpeculativeDecoder:
     ):
         self.device = device
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
-        self._last_target_predictions: Optional[torch.Tensor] = None
 
         if self.device == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
@@ -119,69 +118,15 @@ class SpeculativeDecoder:
         model = self._load_model(model_name, tokenizer, use_lower_precision=(self.device == "cuda"))
         return model, tokenizer
 
-    def generate_draft_tokens(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        num_speculative_tokens: int = 10,
-    ) -> torch.Tensor:
-        if num_speculative_tokens <= 0:
-            return input_ids.new_empty((input_ids.shape[0], 0))
-
-        with torch.inference_mode():
-            generated = self.draft_model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=num_speculative_tokens,
-                do_sample=False,
-                use_cache=True,
-                pad_token_id=self.draft_tokenizer.pad_token_id,
-                eos_token_id=self.draft_tokenizer.eos_token_id,
-            )
-
-        return generated[:, input_ids.shape[1] :]
-
-    def verify_tokens_vectorized(
-        self,
-        input_ids: torch.Tensor,
-        draft_tokens: torch.Tensor,
-        attention_mask: torch.Tensor,
-    ) -> tuple[List[int], int]:
-        draft_length = draft_tokens.shape[1]
-        if draft_length == 0:
-            self._last_target_predictions = input_ids.new_empty((0,))
-            return [], 0
-
-        combined_input_ids = torch.cat([input_ids, draft_tokens], dim=1)
-        combined_attention_mask = torch.cat(
-            [
-                attention_mask,
-                torch.ones(
-                    (attention_mask.shape[0], draft_length),
-                    dtype=attention_mask.dtype,
-                    device=self.device,
-                ),
-            ],
-            dim=1,
+    def _cached_forward(self, model, token_ids: torch.Tensor, past):
+        if token_ids.dim() == 1:
+            token_ids = token_ids.unsqueeze(0)
+        outputs = model(
+            input_ids=token_ids,
+            past_key_values=past,
+            use_cache=True,
         )
-
-        with torch.inference_mode():
-            outputs = self.target_model(
-                input_ids=combined_input_ids,
-                attention_mask=combined_attention_mask,
-                use_cache=True,
-            )
-
-        start_idx = input_ids.shape[1] - 1
-        verification_logits = outputs.logits[:, start_idx : start_idx + draft_length + 1, :]
-        target_predictions = verification_logits.argmax(dim=-1)
-        draft_matches = target_predictions[:, :draft_length].eq(draft_tokens)
-
-        mismatch_locations = (~draft_matches[0]).nonzero(as_tuple=False)
-        accepted_position = draft_length if mismatch_locations.numel() == 0 else mismatch_locations[0, 0].item()
-        accepted_tokens = draft_tokens[0, :accepted_position].tolist()
-        self._last_target_predictions = target_predictions[0].detach()
-        return accepted_tokens, accepted_position
+        return outputs.logits, outputs.past_key_values
 
     def speculative_decode(
         self,
@@ -195,51 +140,99 @@ class SpeculativeDecoder:
         prompt_length = input_ids.shape[1]
         eos_token_id = self.target_tokenizer.eos_token_id
 
+        with torch.inference_mode():
+            target_prefill = self.target_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=True,
+            )
+            draft_prefill = self.draft_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=True,
+            )
+        target_past = target_prefill.past_key_values
+        draft_past = draft_prefill.past_key_values
+        target_next_logits = target_prefill.logits[:, -1, :]
+        draft_next_logits = draft_prefill.logits[:, -1, :]
+
         total_draft_tokens_proposed = 0
         total_draft_tokens_accepted = 0
         start_time = time.time()
 
         while input_ids.shape[1] - prompt_length < max_tokens:
             remaining_tokens = max_tokens - (input_ids.shape[1] - prompt_length)
-            speculative_window = min(num_speculative_tokens, remaining_tokens)
-
-            draft_tokens = self.generate_draft_tokens(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                num_speculative_tokens=speculative_window,
-            )
-
-            if draft_tokens.shape[1] == 0:
-                with torch.inference_mode():
-                    outputs = self.target_model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        use_cache=True,
-                    )
-                candidate_tokens = [int(outputs.logits[:, -1, :].argmax(dim=-1).item())]
-            else:
-                total_draft_tokens_proposed += draft_tokens.shape[1]
-                accepted_tokens, accepted_position = self.verify_tokens_vectorized(
-                    input_ids=input_ids,
-                    draft_tokens=draft_tokens,
-                    attention_mask=attention_mask,
-                )
-                total_draft_tokens_accepted += accepted_position
-
-                candidate_tokens = list(accepted_tokens)
-                if accepted_position < draft_tokens.shape[1]:
-                    candidate_tokens.append(int(self._last_target_predictions[accepted_position].item()))
-                elif len(candidate_tokens) < remaining_tokens:
-                    candidate_tokens.append(int(self._last_target_predictions[draft_tokens.shape[1]].item()))
-
-            if not candidate_tokens:
+            gamma = min(num_speculative_tokens, remaining_tokens)
+            if gamma <= 0:
                 break
 
-            candidate_tokens = candidate_tokens[:remaining_tokens]
-            if eos_token_id is not None and eos_token_id in candidate_tokens:
-                candidate_tokens = candidate_tokens[: candidate_tokens.index(eos_token_id) + 1]
+            draft_token_list: list[int] = []
+            with torch.inference_mode():
+                for _ in range(gamma):
+                    token = int(draft_next_logits.argmax(dim=-1).item())
+                    draft_token_list.append(token)
+                    step_logits, draft_past = self._cached_forward(
+                        self.draft_model,
+                        torch.tensor([[token]], dtype=input_ids.dtype, device=self.device),
+                        draft_past,
+                    )
+                    draft_next_logits = step_logits[:, -1, :]
 
-            new_tokens = torch.tensor([candidate_tokens], dtype=input_ids.dtype, device=self.device)
+                verify_logits, target_past = self._cached_forward(
+                    self.target_model,
+                    torch.tensor([draft_token_list], dtype=input_ids.dtype, device=self.device),
+                    target_past,
+                )
+
+            first_pred = int(target_next_logits.argmax(dim=-1).item())
+            if gamma == 1:
+                predictions = [first_pred]
+            else:
+                later_predictions = verify_logits[:, :-1, :].argmax(dim=-1)[0].tolist()
+                predictions = [first_pred, *later_predictions]
+            bonus_token = int(verify_logits[:, -1, :].argmax(dim=-1).item())
+
+            accepted = 0
+            for prediction, drafted in zip(predictions, draft_token_list):
+                if prediction != drafted:
+                    break
+                accepted += 1
+
+            total_draft_tokens_proposed += gamma
+            total_draft_tokens_accepted += accepted
+
+            if accepted < gamma:
+                committed = draft_token_list[:accepted] + [predictions[accepted]]
+            else:
+                committed = draft_token_list[:accepted] + [bonus_token]
+
+            if eos_token_id is not None and eos_token_id in committed:
+                committed = committed[: committed.index(eos_token_id) + 1]
+            committed = committed[:remaining_tokens]
+            if not committed:
+                break
+
+            kept_draft = 0
+            for token in committed:
+                if kept_draft < gamma and token == draft_token_list[kept_draft]:
+                    kept_draft += 1
+                else:
+                    break
+            to_forward = committed[kept_draft:]
+            rejected = gamma - kept_draft
+            if rejected:
+                target_past.crop(-rejected)
+                draft_past.crop(-rejected)
+
+            if to_forward:
+                forward_ids = torch.tensor([to_forward], dtype=input_ids.dtype, device=self.device)
+                with torch.inference_mode():
+                    step_logits, target_past = self._cached_forward(self.target_model, forward_ids, target_past)
+                    target_next_logits = step_logits[:, -1, :]
+                    step_logits, draft_past = self._cached_forward(self.draft_model, forward_ids, draft_past)
+                    draft_next_logits = step_logits[:, -1, :]
+
+            new_tokens = torch.tensor([committed], dtype=input_ids.dtype, device=self.device)
             new_attention = torch.ones(
                 (attention_mask.shape[0], new_tokens.shape[1]),
                 dtype=attention_mask.dtype,
@@ -248,7 +241,7 @@ class SpeculativeDecoder:
             input_ids = torch.cat([input_ids, new_tokens], dim=1)
             attention_mask = torch.cat([attention_mask, new_attention], dim=1)
 
-            if eos_token_id is not None and candidate_tokens[-1] == eos_token_id:
+            if eos_token_id is not None and committed[-1] == eos_token_id:
                 break
 
         elapsed_time = time.time() - start_time
